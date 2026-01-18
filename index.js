@@ -4,9 +4,8 @@ const https = require("https");
 const PORT = process.env.PORT || 3000;
 const WEBHOOK = process.env.WEBHOOK;
 
-// ===== กัน Discord 429 แบบถาวร =====
-const notifiedIPs = new Map();
-const IP_COOLDOWN = 60 * 1000; // 1 นาที ต่อ 1 IP
+// เก็บ IP ที่เคยแจ้ง
+const notifiedIPs = new Set();
 
 function detectDevice(ua) {
   ua = ua.toLowerCase();
@@ -20,26 +19,32 @@ function detectDevice(ua) {
 }
 
 const server = http.createServer((req, res) => {
+  // ❌ ข้าม favicon (ตัวการ 429)
+  if (req.url === "/favicon.ico") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  // ❌ รับแค่หน้า /
+  if (req.url !== "/") {
+    res.end("OK");
+    return;
+  }
+
   const ip =
     req.headers["x-forwarded-for"]?.split(",")[0] ||
     req.socket.remoteAddress;
 
   console.log("REQUEST IN:", ip);
 
-  if (!WEBHOOK || !WEBHOOK.startsWith("https://")) {
-    res.end("Webhook not set");
-    return;
-  }
-
-  // ===== กัน IP ซ้ำ =====
-  const now = Date.now();
-  const last = notifiedIPs.get(ip);
-  if (last && now - last < IP_COOLDOWN) {
-    console.log("SKIP DUP IP:", ip);
+  // ❌ IP ซ้ำไม่ส่ง
+  if (notifiedIPs.has(ip)) {
+    console.log("SKIP DUP IP");
     res.end("OK");
     return;
   }
-  notifiedIPs.set(ip, now);
+  notifiedIPs.add(ip);
 
   const ua = req.headers["user-agent"] || "unknown";
   const device = detectDevice(ua);
