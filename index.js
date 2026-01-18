@@ -41,4 +41,9 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log("Server running on port", PORT);
+
+console.log("REQUEST IN");
+
+const reqDiscord = https.request(options, res2 => {
+  console.log("DISCORD STATUS:", res2.statusCode);
 });
