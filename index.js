@@ -4,88 +4,61 @@ const https = require("https");
 const PORT = process.env.PORT || 3000;
 const WEBHOOK = process.env.WEBHOOK;
 
-// ===== กันสแปม Discord =====
-let lastSent = 0;
-const COOLDOWN = 5000; // 5 วินาที
+// ===== กัน Discord 429 แบบถาวร =====
+const notifiedIPs = new Map();
+const IP_COOLDOWN = 60 * 1000; // 1 นาที ต่อ 1 IP
 
 function detectDevice(ua) {
   ua = ua.toLowerCase();
-
   if (ua.includes("android")) return "📱 Android";
   if (ua.includes("iphone")) return "📱 iPhone";
   if (ua.includes("ipad")) return "💻 iPad";
   if (ua.includes("windows")) return "🖥️ Windows";
   if (ua.includes("mac os")) return "💻 macOS";
   if (ua.includes("linux")) return "🖥️ Linux";
-
-  return "❓ Unknown device";
+  return "❓ Unknown";
 }
 
 const server = http.createServer((req, res) => {
-  console.log("REQUEST IN");
-
-  // ตรวจ webhook
-  if (!WEBHOOK || !WEBHOOK.startsWith("https://")) {
-    console.log("WEBHOOK NOT SET");
-    res.writeHead(500, { "Content-Type": "text/plain" });
-    res.end("Webhook not set");
-    return;
-  }
-
-  // กันยิงถี่
-  const now = Date.now();
-  if (now - lastSent < COOLDOWN) {
-    console.log("COOLDOWN ACTIVE");
-    res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end("OK");
-    return;
-  }
-  lastSent = now;
-
-  // IP + UA
   const ip =
     req.headers["x-forwarded-for"]?.split(",")[0] ||
     req.socket.remoteAddress;
 
+  console.log("REQUEST IN:", ip);
+
+  if (!WEBHOOK || !WEBHOOK.startsWith("https://")) {
+    res.end("Webhook not set");
+    return;
+  }
+
+  // ===== กัน IP ซ้ำ =====
+  const now = Date.now();
+  const last = notifiedIPs.get(ip);
+  if (last && now - last < IP_COOLDOWN) {
+    console.log("SKIP DUP IP:", ip);
+    res.end("OK");
+    return;
+  }
+  notifiedIPs.set(ip, now);
+
   const ua = req.headers["user-agent"] || "unknown";
   const device = detectDevice(ua);
 
-  // ===== Discord Embed =====
   const payload = JSON.stringify({
     embeds: [
       {
         title: "📣📢 แจ้งเตือน",
         color: 0xff5fa2,
         fields: [
-          {
-            name: "🌐 IP",
-            value: ip,
-            inline: false
-          },
-          {
-            name: "🖥️ Device",
-            value: device,
-            inline: false
-          }
+          { name: "🌐 IP", value: ip, inline: false },
+          { name: "🖥️ Device", value: device, inline: false }
         ],
-        footer: {
-          text: "Website Access Notification"
-        },
         timestamp: new Date().toISOString()
       }
     ]
   });
 
-  let url;
-  try {
-    url = new URL(WEBHOOK);
-  } catch (err) {
-    console.log("INVALID WEBHOOK URL");
-    res.writeHead(500, { "Content-Type": "text/plain" });
-    res.end("Invalid webhook");
-    return;
-  }
-
+  const url = new URL(WEBHOOK);
   const options = {
     hostname: url.hostname,
     path: url.pathname,
@@ -96,8 +69,8 @@ const server = http.createServer((req, res) => {
     }
   };
 
-  const reqDiscord = https.request(options, res2 => {
-    console.log("DISCORD STATUS:", res2.statusCode);
+  const reqDiscord = https.request(options, r => {
+    console.log("DISCORD STATUS:", r.statusCode);
   });
 
   reqDiscord.on("error", err => {
@@ -107,7 +80,6 @@ const server = http.createServer((req, res) => {
   reqDiscord.write(payload);
   reqDiscord.end();
 
-  res.writeHead(200, { "Content-Type": "text/plain" });
   res.end("OK");
 });
 
