@@ -4,7 +4,7 @@ const https = require("https");
 const PORT = process.env.PORT || 3000;
 const WEBHOOK = process.env.WEBHOOK;
 
-// เก็บ IP ที่เคยแจ้ง
+// กันยิงซ้ำ
 const notifiedIPs = new Set();
 
 function detectDevice(ua) {
@@ -14,19 +14,18 @@ function detectDevice(ua) {
   if (ua.includes("ipad")) return "💻 iPad";
   if (ua.includes("windows")) return "🖥️ Windows";
   if (ua.includes("mac os")) return "💻 macOS";
-  if (ua.includes("linux")) return "🖥️ Linux";
   return "❓ Unknown";
 }
 
 const server = http.createServer((req, res) => {
-  // ❌ ข้าม favicon (ตัวการ 429)
+  // ❌ ข้าม favicon
   if (req.url === "/favicon.ico") {
     res.writeHead(204);
     res.end();
     return;
   }
 
-  // ❌ รับแค่หน้า /
+  // ❌ รับเฉพาะหน้า /
   if (req.url !== "/") {
     res.end("OK");
     return;
@@ -36,9 +35,16 @@ const server = http.createServer((req, res) => {
     req.headers["x-forwarded-for"]?.split(",")[0] ||
     req.socket.remoteAddress;
 
+  // ❌ ตัด localhost / Render internal
+  if (ip === "::1" || ip.startsWith("35.") || ip.startsWith("34.")) {
+    console.log("SKIP INTERNAL:", ip);
+    res.end("OK");
+    return;
+  }
+
   console.log("REQUEST IN:", ip);
 
-  // ❌ IP ซ้ำไม่ส่ง
+  // ❌ กัน IP ซ้ำ
   if (notifiedIPs.has(ip)) {
     console.log("SKIP DUP IP");
     res.end("OK");
@@ -46,7 +52,13 @@ const server = http.createServer((req, res) => {
   }
   notifiedIPs.add(ip);
 
-  const ua = req.headers["user-agent"] || "unknown";
+  const ua = req.headers["user-agent"] || "";
+  if (!ua.includes("Mozilla")) {
+    console.log("SKIP NON-BROWSER");
+    res.end("OK");
+    return;
+  }
+
   const device = detectDevice(ua);
 
   const payload = JSON.stringify({
