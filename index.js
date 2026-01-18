@@ -24,8 +24,10 @@ function detectDevice(ua) {
 const server = http.createServer((req, res) => {
   console.log("REQUEST IN");
 
+  // ตรวจ webhook
   if (!WEBHOOK || !WEBHOOK.startsWith("https://")) {
     console.log("WEBHOOK NOT SET");
+    res.writeHead(500, { "Content-Type": "text/plain" });
     res.end("Webhook not set");
     return;
   }
@@ -34,11 +36,13 @@ const server = http.createServer((req, res) => {
   const now = Date.now();
   if (now - lastSent < COOLDOWN) {
     console.log("COOLDOWN ACTIVE");
+    res.writeHead(200, { "Content-Type": "text/plain" });
     res.end("OK");
     return;
   }
   lastSent = now;
 
+  // IP + UA
   const ip =
     req.headers["x-forwarded-for"]?.split(",")[0] ||
     req.socket.remoteAddress;
@@ -51,7 +55,7 @@ const server = http.createServer((req, res) => {
     embeds: [
       {
         title: "📣📢 แจ้งเตือน",
-        color: 0xff5fa2, // ชมพู
+        color: 0xff5fa2,
         fields: [
           {
             name: "🌐 IP",
@@ -72,7 +76,15 @@ const server = http.createServer((req, res) => {
     ]
   });
 
-  const url = new URL(WEBHOOK);
+  let url;
+  try {
+    url = new URL(WEBHOOK);
+  } catch (err) {
+    console.log("INVALID WEBHOOK URL");
+    res.writeHead(500, { "Content-Type": "text/plain" });
+    res.end("Invalid webhook");
+    return;
+  }
 
   const options = {
     hostname: url.hostname,
@@ -101,3 +113,4 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log("Server running on port", PORT);
+});
